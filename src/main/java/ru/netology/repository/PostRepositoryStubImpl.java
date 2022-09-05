@@ -5,71 +5,45 @@ import ru.netology.exception.NotFoundException;
 import ru.netology.model.Post;
 
 import java.util.*;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Repository
 public class PostRepositoryStubImpl implements PostRepository {
-    private final AtomicLong newId = new AtomicLong();
-    private final Set<Long> usedId = new CopyOnWriteArraySet<>();
-    private final Set<Long> freeId = new CopyOnWriteArraySet<>();
-    private final List<Post> posts = new CopyOnWriteArrayList<>();
+    private final AtomicLong newId = new AtomicLong();                 //хранит id по порядку
+    private final Map<Long, Post> posts = new ConcurrentHashMap<>();
 
     public List<Post> all() {
-        return posts;
+        return new ArrayList<>(posts.values());
     }
 
     public Optional<Post> getById(long id) {
-        for (Post post : posts) {
-            if (post.getId() == id) {
-                return Optional.of(post);
-            }
-        }
-        return Optional.empty();
+        return Optional.of(posts.get(id));
     }
 
     public Post save(Post post) {
-        if (newId.get() == 0) {
-            newId.set(1);
-        }
-
-        if (posts.size() == 0) {
-            if (post.getId() == 0) {
-                post.setId(newId.get());
-                posts.add(post);
-                usedId.add(newId.get());
-                newId.incrementAndGet();
-            } else {
-                posts.add(post);
-                usedId.add(post.getId());
+        if (posts.isEmpty()) {              //если список постов пустой, то
+            if (post.getId() == 0) {            //если пришел пост с id = 0
+                post.setId(newId.incrementAndGet());   //присваиваем посту id = 1 (самый первый случай)
+                posts.put(post.getId(), post);          //и добавляем его в лист
+            } else {                            //иначе, если id поста != 0, то
+                posts.put(post.getId(), post);      //просто добавляем пост с этим id в список постов
             }
-        } else {
-            if (post.getId() == 0) {
-                if (!freeId.isEmpty()) {
-                    post.setId(freeId.stream().min(Comparator.naturalOrder()).get());
-                    freeId.remove(post.getId());
-                    posts.add(post);
-                    usedId.add(post.getId());
-                } else {
-                    while (usedId.contains(newId.get())) {
-                        newId.incrementAndGet();
-                    }
-                    post.setId(newId.get());
-                    posts.add(post);
-                    usedId.add(newId.get());
+        } else {                            //иначе если список постов не пустой, то
+            if (post.getId() == 0) {            //если пришел пост с id = 0
+                newId.set(1);                              //устанавливаем id = 1
+                while (posts.containsKey(newId.get())) {   //и пробегаемся по ключам мапы до тех пор,
+                    newId.incrementAndGet();               //пока не будет подобран следующий по порядку id
                 }
-            } else {
-                if (usedId.contains(post.getId())) {
-                    for (Post post1 : posts) {
-                        if (post1.getId() == post.getId() && !post1.getContent().equals(post.getContent())) {
-                            posts.remove(post1);
-                            posts.add(post);
-                        }
-                    }
-                } else {
-                    posts.add(post);
-                    usedId.add(post.getId());
+                post.setId(newId.get());                   //присваиваем посту новый id
+                posts.put(post.getId(), post);          //кладем пост в мапу
+            } else {                            //иначе, если пришел пост с id != 0, то
+                if (posts.containsKey(post.getId())) {  //смотрим, есть ли уже такой id в мапе, если да, то
+                    if (!posts.get(post.getId()).equals(post)) {    //если старый пост и новый пост отличаются
+                        posts.replace(post.getId(), post);              //заменяем старый пост новым
+                    }                                               //иначе ничего не делаем
+                } else {                                //иначе, если поста с таки id не существует, то
+                    posts.put(post.getId(), post);                  //добавляем пост в мапу
                 }
             }
         }
@@ -77,20 +51,13 @@ public class PostRepositoryStubImpl implements PostRepository {
     }
 
     public void removeById(long id) {
-        if (usedId.contains(id)) {
-            for (Post post1 : posts) {
-                if (post1.getId() == id) {
-                    posts.remove(post1);
-                    usedId.remove(id);
-                    freeId.add(id);
-                }
-            }
-        } else {
-            throw new NotFoundException();
+        if (posts.containsKey(id)) {        //если id содержится в списке ключей мапы
+            posts.remove(id);                   //удаляем пост из мапы
+        } else {                            //иначе если поста с таким id нет в мапе
+            throw new NotFoundException();      //выбрасываем ошибку в контроллер
         }
-        if (posts.isEmpty()) {
-            newId.set(1);
-            freeId.clear();
+        if (posts.isEmpty()) {              //если удалили все посты из списка
+            newId.set(0);                       //выставляем нумерацию на 0
         }
     }
 }
